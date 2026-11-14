@@ -1,0 +1,71 @@
+%% VibeFinder 2.0 - "Ask VibeFinder" system diagram
+%% Input -> Process -> Output, plus where humans and tests check the AI.
+flowchart TD
+    %% ---------- INPUT ----------
+    U(["👤 User<br/>natural-language request<br/>e.g. 'mellow music for a rainy study night'"])
+
+    %% ---------- PROCESS ----------
+    subgraph AGENT["🤖 Agent (src/agent.py) - plan → act → check loop"]
+        direction TB
+        G1["🛡️ Input Guardrails<br/>(src/guardrails.py)<br/>length limit · off-topic/unsafe refusal · empty request"]
+        P["🧠 Parser - Gemini<br/>(src/llm.py)<br/>text → structured taste profile<br/>genre/mood limited to CSV labels"]
+        G2["🛡️ Profile Guardrails<br/>clamp targets to 0-1 · unknown label → nearest known"]
+        R["🔎 Retriever<br/>(src/recommender.py: recommend_songs)<br/>scores all songs, returns top-k + reasons"]
+        GEN["✍️ Generator - Gemini<br/>(src/llm.py)<br/>writes picks + explanations<br/>ONLY from retrieved songs, cites IDs"]
+        V{"✅ Validator<br/>songs exist in retrieved set?<br/>count == k? no invented titles?"}
+        RETRY["🔁 Retry once<br/>with error message fed back"]
+        FB["🧯 Fallback<br/>plain scorer output + template reasons"]
+    end
+
+    KB[("📚 Knowledge base<br/>data/songs.csv<br/>(+ optional song notes)")]
+    OFF["🔌 Offline mode<br/>no GEMINI_API_KEY → rule-based parser<br/>+ template explainer"]
+    LOG[("📝 Logs<br/>logs/vibefinder.log<br/>profile · retrieved IDs · latency · retries · fallbacks")]
+
+    %% ---------- OUTPUT ----------
+    OUT(["🎵 Output<br/>top-k songs with plain-English 'why this song'"])
+
+    %% ---------- TESTING / HUMAN CHECKS ----------
+    subgraph CHECKS["🧪 Testing & Human Review"]
+        direction TB
+        T["pytest (tests/)<br/>guardrails · validator · offline parser<br/>Gemini mocked"]
+        E["Evaluator (eval/run_eval.py)<br/>labeled queries → pass rate,<br/>hallucination rate, fallback rate,<br/>consistency across repeated runs"]
+        H["👤 Human reviewer<br/>reads outputs & logs,<br/>judges if picks fit the vibe,<br/>updates model_card.md"]
+    end
+
+    %% ---------- MAIN FLOW ----------
+    U --> G1
+    G1 -- "rejected" --> OUT
+    G1 -- "ok" --> P
+    P --> G2 --> R
+    KB --> R
+    R -- "candidates + reasons (RAG context)" --> GEN
+    GEN --> V
+    V -- "pass" --> OUT
+    V -- "fail (1st)" --> RETRY --> GEN
+    V -- "fail (2nd)" --> FB --> OUT
+    P -. "API error / timeout" .-> FB
+    OFF -. "replaces Gemini steps" .-> P
+    OFF -.-> GEN
+
+    %% ---------- LOGGING ----------
+    AGENT -. "every step" .-> LOG
+
+    %% ---------- CHECKING AI RESULTS ----------
+    T -. "unit tests" .-> AGENT
+    E -. "runs queries through" .-> AGENT
+    OUT --> H
+    LOG --> H
+    E --> H
+    H -. "tune prompts, weights, guardrails" .-> AGENT
+
+    %% ---------- STYLES ----------
+    classDef ai fill:#e8e0ff,stroke:#6a4cc2,color:#222
+    classDef guard fill:#fff1d6,stroke:#c48a00,color:#222
+    classDef data fill:#e3f2fd,stroke:#1e6fb8,color:#222
+    classDef human fill:#e6f7e9,stroke:#2e8b47,color:#222
+    classDef fail fill:#fde4e4,stroke:#c0392b,color:#222
+    class P,GEN ai
+    class G1,G2,V guard
+    class KB,LOG,R data
+    class U,H,OUT human
+    class RETRY,FB,OFF fail
