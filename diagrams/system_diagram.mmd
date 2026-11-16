@@ -10,7 +10,7 @@ flowchart TD
         G1["🛡️ Input Guardrails<br/>(src/guardrails.py)<br/>length limit · off-topic/unsafe refusal · empty request"]
         P["🧠 Parser - Gemini<br/>(src/llm.py)<br/>text → structured taste profile<br/>genre/mood limited to CSV labels"]
         G2["🛡️ Profile Guardrails<br/>clamp targets to 0-1 · unknown label → nearest known"]
-        R["🔎 Retriever<br/>(src/recommender.py: recommend_songs)<br/>scores all songs, returns top-k + reasons"]
+        R["🔎 Retriever<br/>(src/recommender.py: retrieve_candidates)<br/>scores all songs, returns top-k + reasons"]
         GEN["✍️ Generator - Gemini<br/>(src/llm.py)<br/>writes picks + explanations<br/>ONLY from retrieved songs, cites IDs"]
         V{"✅ Validator<br/>songs exist in retrieved set?<br/>count == k? no invented titles?"}
         RETRY["🔁 Retry once<br/>with error message fed back"]
@@ -28,7 +28,7 @@ flowchart TD
     subgraph CHECKS["🧪 Testing & Human Review"]
         direction TB
         T["pytest (tests/)<br/>guardrails · validator · offline parser<br/>Gemini mocked"]
-        E["Evaluator (eval/run_eval.py)<br/>labeled queries → pass rate,<br/>hallucination rate, fallback rate,<br/>consistency across repeated runs"]
+        E["Evaluator (eval/run_eval.py, planned)<br/>labeled queries → pass rate,<br/>hallucination rate, fallback rate,<br/>consistency across repeated runs"]
         H["👤 Human reviewer<br/>reads outputs & logs,<br/>judges if picks fit the vibe,<br/>updates model_card.md"]
     end
 
