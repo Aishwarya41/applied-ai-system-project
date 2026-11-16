@@ -1,14 +1,16 @@
 """
-Command line runner for the Music Recommender Simulation.
+Command line runner for VibeFinder.
 
-This file helps you quickly run and test your recommender.
-
-You will implement the functions in recommender.py:
-- load_songs
-- score_song
-- recommend_songs
+    python -m src.main                                  # original profile demo
+    python -m src.main --offline --query "chill study music"
+    python -m src.main --query "upbeat workout, no pop" -k 3
 """
 
+import argparse
+
+from dotenv import load_dotenv
+
+from src.agent import Result, run_query
 from src.recommender import load_songs, recommend_songs
 
 
@@ -84,7 +86,8 @@ PROFILES = {
 }
 
 
-def main() -> None:
+def run_profile_demo() -> None:
+    """Original demo: raw scorer on hard-coded profiles (no guardrails, by design)."""
     songs = load_songs("data/songs.csv")
 
     for name, user_prefs in PROFILES.items():
@@ -94,6 +97,45 @@ def main() -> None:
         for song, score, explanation in recommendations:
             print(f"{song['title']} ({song['genre']}/{song['mood']}) - Score: {score:.2f}")
             print(f"  Because: {explanation}")
+
+
+def print_result(result: Result) -> None:
+    print(f"\nQuery: {result.query!r}   [mode={result.mode} status={result.status} id={result.request_id}]")
+    if result.message:
+        print(f"\n{result.message}")
+    if result.summary:
+        print(f"\n{result.summary}")
+    if result.profile:
+        print(f"Parsed profile: {result.profile}")
+    if result.avoid_genres:
+        print(f"Avoiding genres: {', '.join(result.avoid_genres)}")
+    for warning in result.warnings:
+        print(f"  ! {warning}")
+
+    for i, rec in enumerate(result.recommendations, start=1):
+        print(f"\n{i}. {rec['title']} by {rec['artist']} ({rec['genre']}/{rec['mood']})  score {rec['score']:.2f}")
+        print(f"   {rec['explanation']}")
+
+    print("\nTrace:")
+    for step in result.trace:
+        mark = "ok " if step.ok else "-- "
+        print(f"  {mark}{step.stage:<9} {step.ms:6.1f}ms  {step.detail}")
+
+
+def main() -> None:
+    load_dotenv()
+    parser = argparse.ArgumentParser(description="VibeFinder music recommender")
+    parser.add_argument("-q", "--query", help="natural-language request, e.g. 'chill study music'")
+    parser.add_argument("--offline", action="store_true", help="skip the LLM; use the rule-based parser")
+    parser.add_argument("-k", type=int, default=5, help="number of recommendations (default 5)")
+    parser.add_argument("--corrupt", type=int, default=0, choices=[0, 1, 2],
+                        help="debug: sabotage N Gemini answers to demo the retry/fallback loop")
+    args = parser.parse_args()
+
+    if args.query is None:
+        run_profile_demo()
+        return
+    print_result(run_query(args.query, k=args.k, offline=args.offline, corrupt_attempts=args.corrupt))
 
 
 if __name__ == "__main__":

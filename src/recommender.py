@@ -145,15 +145,33 @@ def score_song(user_prefs: Dict, song: Dict) -> Tuple[float, List[str]]:
     score = total / weight_sum if weight_sum else 0.0
     return score, reasons
 
+def retrieve_candidates(
+    user_prefs: Dict,
+    songs: List[Dict],
+    k: int = 10,
+    exclude_genres: Optional[List[str]] = None,
+) -> List[Dict]:
+    """
+    Retriever for the RAG pipeline: score every song and return the top k as
+    {"song": dict, "score": float, "reasons": [str]} records.
+    Songs in exclude_genres (e.g. "no pop") are filtered out first.
+    """
+    excluded = set(exclude_genres or ())
+    candidates = []
+    for song in songs:
+        if song["genre"] in excluded:
+            continue
+        score, reasons = score_song(user_prefs, song)
+        candidates.append({"song": song, "score": score, "reasons": reasons})
+    candidates.sort(key=lambda c: c["score"], reverse=True)
+    return candidates[:k]
+
 def recommend_songs(user_prefs: Dict, songs: List[Dict], k: int = 5) -> List[Tuple[Dict, float, str]]:
     """
     Functional implementation of the recommendation logic.
     Required by src/main.py
     """
-    scored = []
-    for song in songs:
-        score, reasons = score_song(user_prefs, song)
-        explanation = "; ".join(reasons) if reasons else "No close matches"
-        scored.append((song, score, explanation))
-    scored.sort(key=lambda item: item[1], reverse=True)
-    return scored[:k]
+    return [
+        (c["song"], c["score"], "; ".join(c["reasons"]) if c["reasons"] else "No close matches")
+        for c in retrieve_candidates(user_prefs, songs, k)
+    ]
