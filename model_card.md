@@ -1,39 +1,46 @@
-# 🎧 Model Card: Music Recommender Simulation
+# 🎧 Model Card: VibeFinder 2.0
 
-## 1. Model Name  
+## 1. Model Name
 
-**VibeFinder 1.0**
+**VibeFinder 2.0.** It builds on VibeFinder 1.0, my Music Recommender Simulation from Modules 1–3.
 
 ---
 
-## 2. Goal / Task and Intended Use  
+## 2. Goal / Task and Intended Use
 
-**Goal.** The model suggests songs a listener might like. It picks 5 songs from a small catalog. It also says why it picked each one.
+**Goal.** The listener types what they want in plain English, like "something mellow for a rainy study night, no pop." The system picks songs from a 28-song catalog and explains each pick. Every pick must be a real song from the catalog.
 
-**Who it is for.** It is for classroom learning. It shows how a simple recommender works.
-
-**What it assumes.** The listener tells us what they like. They give a favorite genre, a favorite mood, and target numbers. The model does not learn from listening history.
+**Who it is for.** It is a portfolio and classroom project. It shows how to use an LLM safely with retrieval, guardrails, and self-checks.
 
 **Intended use.**
-- Learning how scoring and ranking work.
-- Testing how profiles change the results.
-- Explaining why a song was picked.
+- Showing how RAG works: retrieve facts first, then let the AI write from them.
+- Showing how to check an AI's answer before a user sees it.
+- Learning how scoring, ranking, and guardrails shape results.
 
 **Not intended for.**
-- Real music apps with real users.
-- Deciding what artists get heard or paid.
-- Mood or health advice, like picking music for someone who is sad.
-- Large catalogs. It was only tried on 28 songs.
+- Real music apps with real users or real catalogs.
+- Deciding which artists get heard or paid.
+- Mood, mental health, or medical advice. If a request mentions self-harm, the app does not recommend music. It points to the 988 crisis line instead.
+- Anything other than music. Off-topic requests get a clarifying message.
 
 ---
 
-## 3. Algorithm Summary  
+## 3. System Summary
 
-The model gives every song a score from 0 to 1. A higher score means a better fit.
+VibeFinder 2.0 has six steps. Each step is a separate file.
 
-Each song earns points for five things:
+| Step | What it does | AI or code? |
+|---|---|---|
+| 1. Guard | Blocks empty, too-long, unsafe, and prompt-injection input | Code |
+| 2. Parse | Turns the request into a profile (genre, mood, energy, …) | **Gemini** (`gemini-3.5-flash-lite`, temperature 0), or a rule-based parser offline |
+| 3. Sanitize | Clamps numbers to 0–1, maps words to real labels, flags contradictions | Code |
+| 4. Retrieve | Scores all 28 songs and keeps the top 10 | Code (the 1.0 scorer) |
+| 5. Generate | Picks *k* of the 10 songs by ID and explains them | **Gemini**, or a template offline |
+| 6. Check | Makes sure every pick is a retrieved song with the right title | Code; 1 retry, then fallback |
 
-| Feature | Max points | How it earns them |
+**The scorer (unchanged from 1.0).** Each song gets a score from 0 to 1.
+
+| Feature | Weight | How it earns points |
 |---|---|---|
 | Energy | 4.0 | Closer to the target is better |
 | Mood | 1.5 | Full points if it matches, else none |
@@ -41,63 +48,83 @@ Each song earns points for five things:
 | Genre | 0.5 | Full points if it matches, else none |
 | Acousticness | 0.5 | Closer to the target is better |
 
-- Genre and mood are all or nothing.
-- Energy, valence, and acousticness are about being close. A song that is too loud is penalized like one that is too quiet.
-- The model adds up the points. It divides by the most a song could earn. That keeps every score between 0 and 1.
-- If the listener skips a feature, it is left out.
-- Then it sorts the songs and shows the top 5. Each one has a short reason.
-
-**Why energy counts most.** Energy says how a song feels. Genre is just a label. The catalog is small, so a heavy genre weight would hide good songs from other genres.
-
-**One change I made.** I doubled the energy weight (2.0 to 4.0). I halved the genre weight (1.0 to 0.5). Scores stayed between 0 and 1. The tests still passed.
+What changed is what goes **into** the scorer. In 1.0, a typed profile went straight in. In 2.0, the profile is cleaned first, and Gemini can only choose genre and mood labels that exist in the catalog.
 
 ---
 
-## 4. Data Used  
+## 4. Data Used
 
-- The catalog has **28 songs** in a CSV file.
-- Each song has a genre, a mood, and numbers for energy, tempo, valence, danceability, and acousticness.
-- There are **15 genres**. Lofi has 6 songs. Rock has 4. Nine genres have only 1 song.
-- There are **16 moods**. Chill is the most common, with 4 songs.
-- The model uses genre, mood, energy, valence, and acousticness. It ignores tempo and danceability.
-
-**Limits.**
-- The catalog is tiny.
-- Only one song has energy below 0.2.
-- There is no "sad" mood.
-- Nothing about lyrics, language, artists, or culture.
-- I did not add or remove songs.
+- **Catalog:** 28 songs in `data/songs.csv`, unchanged from 1.0. It has 15 genres (lofi has 6 songs; nine genres have only 1) and 16 moods. There is no "sad" mood.
+- **Sent to Gemini:** the user's request text, the list of allowed labels, and the 10 retrieved songs' data. No names, accounts, or listening history.
+- **Stored locally:** each request is logged to `logs/vibefinder.log`, including the query text. The log is git-ignored and never leaves the machine.
+- **Not included:** lyrics, artist background, language, culture, or popularity.
 
 ---
 
-## 5. Strengths  
+## 5. Strengths
 
-- It works well for clear listeners. Chill Lofi, High-Energy Pop, and Deep Intense Rock all got sensible lists.
-- Calm listeners and intense listeners get totally different songs.
-- Every pick comes with a reason. That makes it easy to check.
-- Scoring by closeness works better than "higher is better."
-- The top picks matched my own sense of what fits.
-
----
-
-## 6. Observed Behavior / Biases and Limitations  
-
-**Biggest weakness: very-low-energy listeners are poorly served, and the high energy weight hides it.** Only 1 of the 28 songs has energy below 0.2 (Nocturne in Rain, 0.18), so for a listener who wants energy 0.0 the best song reaches only 0.49 energy similarity and no song reaches 0.6. Energy carries 4.0 of the 7.5 total weight, so those users cannot make up the loss with mood or genre, and their best possible score without a label match is about 0.71, against 0.94 to 0.95 for mid- or high-energy listeners. Because the system always returns five confident-looking results, a sleep or meditation listener sees a list of mediocre matches with no warning that the catalog has almost nothing for them. The same effect pushes mid-energy songs like Spacewalk Thoughts and Willow Letters into many more top-5 lists (450 and 417 of 1,200 test profiles) than extreme songs like Iron Tide (30).
-
-**Other patterns I saw.**
-- **Gym Hero shows up too much.** It is a loud pop song. It appeared in the top 5 for 7 of 9 profiles.
-- **Energy beats everything.** A song with the right energy can win over one with the right genre.
-- **Unknown moods count for nothing.** Nobody can get mood points for "sad."
-- **Labels are all or nothing.** "Chill" gets no credit for "relaxed." "Indie pop" gets no credit for "pop."
-- **Lofi is over-represented.** Lofi fans get a full list. Reggae fans get one song.
-- **No warning for bad matches.** The model shows 5 songs even when the scores are 0.00.
-- **One target per feature.** A listener who likes both very calm and very loud music cannot say so.
+- **No invented songs reach the user.** Every pick is checked against the retrieved list. In testing, every fake song I injected was caught.
+- **It understands everyday words.** "Mellow", "rainy night", and "no pop" all work. "Sad" now maps to `melancholic`.
+- **It explains bad input instead of hiding it.** Out-of-range numbers are clamped with a warning. Contradictions like "sad but hyper" are flagged.
+- **It always answers.** If Gemini is down or slow, the offline path takes over.
+- **It is transparent.** Every answer has a step-by-step trace, and every request is logged.
 
 ---
 
-## 7. Evaluation  
+## 6. Limitations and Biases
 
-**Short summary.** I tested nine listener profiles. Three were normal. Six were tricky. I read the top 5 songs for each. I also changed the weights and ran the tests again. Below are the details.
+### Biases fixed from 1.0
+
+| 1.0 problem | 2.0 status |
+|---|---|
+| "Chill" got no credit for "relaxed"; "sad" matched nothing | **Fixed.** Gemini picks from real labels, and a synonym table maps words like "sad" → `melancholic`. |
+| Out-of-range targets (energy 1.5) silently gave junk | **Fixed.** Clamped to 0–1 with a visible warning. |
+| An empty profile returned songs in CSV order | **Fixed.** The app asks a clarifying question instead. |
+| No warning for contradictory requests | **Partly fixed.** Simple rules flag common conflicts. |
+
+### Biases and limits that remain
+
+- **Very calm listeners are still served worst.** The retriever is the 1.0 scorer, and only 1 of 28 songs has energy below 0.2. A sleep or meditation listener still gets weaker matches, and the app does not yet say "nothing fits well."
+- **Energy still dominates.** It carries 4.0 of 7.5 total weight, so the right energy can beat the right genre or mood.
+- **The catalog is tiny and uneven.** Lofi fans get a full list. Reggae fans get one song.
+- **Gemini adds its own bias.** It decides what "mellow" or "workout" means. Those choices come from its training data, which likely reflects mainstream, English-language, Western listening habits.
+- **Explanations are not fact-checked word by word.** The checker verifies song IDs and titles, not wording. Gemini sometimes adds details that are not in the data, like "steady tempo" or "comfortable rhythm."
+- **Gemini can reorder picks.** A song with a lower score can appear above one with a higher score. This is allowed, but it can look odd next to the match %.
+- **The same request can parse differently.** Even at temperature 0, one request gave mood `chill` in one run and `focused` in another.
+- **The offline parser only knows its word lists.** Unusual phrasing gets a clarifying question offline.
+- **The safety filters are keyword-based.** They catch obvious cases, but reworded harmful requests could slip through, and harmless ones could be blocked by mistake.
+
+---
+
+## 7. Potential Misuse and How It Is Prevented
+
+| Possible misuse | What could go wrong | Prevention in place | What I would add |
+|---|---|---|---|
+| **Prompt injection** ("ignore previous instructions…") | Hijacking Gemini to reveal its prompt or do something else | Guardrail blocks known patterns before any API call. The request is wrapped in `<request>` tags and labeled as data. Gemini can only reply in a fixed JSON format. | A model-based injection classifier, since keyword lists miss reworded attacks |
+| **Using it as a free general chatbot** | Spending the API quota on non-music tasks | 300-character limit. Gemini flags off-topic requests, which get no songs. Output is structured song picks only, not free text. | Per-user rate limits if deployed |
+| **Self-harm or crisis messages** | A music bot replying casually to someone in danger | Guardrail detects self-harm language and responds with the 988 crisis line, not music. | Better detection than keywords; human-reviewed wording |
+| **Harmful or invented content in answers** | The AI recommending songs that don't exist or making false claims | The validator rejects any song not in the retrieved list. Gemini is told not to invent facts (lyrics, vocals, years). | Checking explanation numbers against the data |
+| **Treating it as mood therapy** | Relying on it for emotional support | The model card states it is not for mental-health use. | An in-app note saying the same |
+| **Leaking the API key** | Someone else using my quota | The key lives in `.env`, which is git-ignored. `.env.example` has no secrets. | Key restrictions in Google Cloud |
+| **Privacy of queries** | Requests may reveal personal feelings | Logs stay local and are git-ignored. Only the request text goes to Google. | An option to turn off query logging |
+
+---
+
+## 8. Evaluation
+
+**Summary.** All 49 automated tests pass with no API key. 9 of 10 manual end-to-end checks with live Gemini passed, and 1 was partial (the same request parsed differently on two days). Every hallucinated song I injected was caught: one retry fixed it, and a double failure fell back safely.
+
+**How reliability is checked.**
+1. **Automated tests (pytest):** 49 tests covering guardrails, the offline parser, the full pipeline, the Gemini paths with a fake model (retry, fallback, timeouts, off-topic), and the Streamlit UI.
+2. **Validation in the app:** every Gemini answer is checked before it is shown, with one retry and a fallback.
+3. **Logging and error handling:** every request is logged. Every Gemini failure is caught, so the app never crashes on an API problem.
+4. **Manual end-to-end checks:** see the table in the [README Testing Summary](README.md#testing-summary).
+
+**Not done yet.** A labeled evaluation script that measures pass rate, hallucination rate, fallback rate, and consistency across repeated runs.
+
+### Baseline: VibeFinder 1.0 profile evaluation
+
+This is my original 1.0 evaluation. It still describes how the retriever behaves, because 2.0 uses the same scorer.
 
 I ran nine listener profiles through the recommender and read the top 5 songs for each. Three are ordinary listeners and six are "tricky" ones built to confuse the scoring.
 
@@ -113,52 +140,72 @@ I ran nine listener profiles through the recommender and read the top 5 songs fo
 - **Out-of-Range Targets:** asks for energy 1.5, valence -0.3, acousticness 2.0 (impossible numbers).
 - **Empty Profile:** states no preferences at all.
 
-**What I looked for:** whether the three ordinary profiles get songs a real person in that mood would accept, and whether the odd profiles fail in a way that is sensible or in a way that is silently wrong.
+**What I found**
 
-**What surprised me**
+1. **"Gym Hero" keeps showing up.** It appears in the top 5 for seven of the nine profiles. It is a very loud (0.93), non-acoustic pop song, so it scores nearly full marks on energy and genre even when the mood is wrong.
+2. **The system never says "I don't know."** For the impossible and empty profiles it still gives five confident-looking answers, with scores of 0.00. *(2.0 now catches the empty and out-of-range cases.)*
+3. **Raising the energy weight (2.0 to 4.0) and lowering genre (1.0 to 0.5) changed more than I expected.** Genre fans were hurt the most.
+4. **A "sad" mood did nothing,** since no song is labeled "sad." *(Fixed in 2.0: "sad" maps to `melancholic`.)*
+5. **Very-low-energy listeners are poorly served.** Only 1 song has energy below 0.2. Their best possible score without a label match is about 0.71, versus 0.94–0.95 for mid- or high-energy listeners. Mid-energy songs like Spacewalk Thoughts and Willow Letters appeared in far more top-5 lists (450 and 417 of 1,200 test profiles) than extreme songs like Iron Tide (30).
 
-1. **"Gym Hero" keeps showing up.** It appears in the top 5 for seven of the nine profiles, including people who just wanted happy pop. Gym Hero is a pop song that is extremely energetic (0.93 out of 1) and not acoustic at all. The recommender gives the most points to energy, and then it checks if the song's genre is "pop". Gym Hero scores nearly full marks on both, so even though its mood is "intense" rather than "happy" (it loses only the mood points), it still beats songs that match the listener's mood but are a bit calmer. For the empty profile and the out-of-range profile it shows up only because every song scored 0 and ties are broken by the order in the file.
-2. **The system never says "I don't know."** For the impossible and empty profiles it still gives five confident-looking answers, with scores of 0.00.
-3. **Raising the energy weight (2.0 to 4.0) and lowering genre (1.0 to 0.5) changed more than I expected.** Genre fans were hurt the most, because a song with the right energy now beats a song with the right genre.
-4. **A "sad" mood did nothing**, since no song in the catalog is labeled "sad". The "sad" listener was effectively treated as an angry-rock listener.
-
-**Profile-by-profile comparisons (what changed, and does it make sense?)**
-
-- **High-Energy Pop vs. Chill Lofi:** Pop gets Sunrise City and Gloss Pop Heart (loud, bright, electronic); Lofi gets Rainy Window Beats and Midnight Coding (quiet, soft, acoustic). They share no songs. This makes sense: the two profiles are opposites on energy (0.90 vs. 0.40) and acousticness (0.15 vs. 0.75), and the lists follow that.
-- **High-Energy Pop vs. Deep Intense Rock:** Both want high energy and low acousticness, so Gym Hero lands in both lists. What differs is the label: pop/happy songs lead for Pop, rock/intense songs lead for Rock. It makes sense that they overlap in the "loud" songs and split on genre and mood. This is the pair that explains why Gym Hero keeps appearing: it is the loud-pop-with-an-intense-mood song that sits right between them.
-- **Chill Lofi vs. Deep Intense Rock:** Completely different lists with no overlap, because they sit at opposite ends of energy (0.40 vs. 0.92) and acousticness. This is the cleanest sign the system tells apart calm and intense listeners.
-- **Deep Intense Rock vs. Sad but Hyper:** Same loud songs (Broken Amp, Iron Tide, Gym Hero, rock tracks), but Sad but Hyper loses the pop songs it asked for and the top score drops from 0.99 to 0.63. It makes sense: the extremely low valence (0.15) pulls toward dark, angry songs, and with no "sad" songs and little genre weight, the profile drifts into rock. The low top score hints that nothing fits well, but the list is still shown without warning.
-- **High-Energy Pop vs. Sad but Hyper:** Both ask for pop with energy 0.9, but Pop's list is cheerful pop while Sad but Hyper's is angry rock. The only difference is a "sad" mood and low valence. Valence and the label shifted the whole list, yet pop songs are gone, so the pop genre request was effectively overruled, which is a sign genre is now weighted too lightly.
-- **Chill Lofi vs. Lofi Genre, Metal Everything Else:** Both say "lofi," but one gets lofi songs and the other gets Broken Amp and Iron Tide (rock and metal). That is sensible, because energy, valence and acousticness now carry most of the weight. It also shows the weakness: a listener who really does want lofi would never get it if they also ask for loud, dark sound.
-- **Deep Intense Rock vs. Lofi Genre, Metal Everything Else:** Similar loud songs, but Rock's top score is 0.99 and the metal-fan's is 0.93, and Rock lists rock/intense first while the other lists rock/angry first. This matches the moods asked for ("intense" vs. "angry"), so it is a valid result.
-- **Loud Unplugged vs. Chill Lofi:** Both want acoustic-ish sound, but Loud Unplugged wants maximum energy and gets rock songs, not folk. The acoustic request was lost, because energy has the largest weight and no song is both loud and acoustic. The system picks "loud" and drops "unplugged" without telling the user.
-- **Unknown Genre/Mood vs. Chill Lofi:** Genre and mood were not found, so only the numbers count: it returns the mid-energy songs (Velvet Hours, Smoky Corner Trio) rather than a clear style. Scores of 0.64 to 0.70 look good but are only a "close to average" signal, not real taste. Chill Lofi scores 0.99 because it has labels to match on.
-- **Out-of-Range Targets vs. Empty Profile:** Both give near-zero scores and meaningless lists. With the impossible targets, only the genre and mood (edm/euphoric) matched for Neon Pulse Festival (0.27); with no preferences, everything ties at 0.00 and the order is just the order in the CSV file. This makes sense mathematically, but it shows the system should reject or warn about bad input.
-
-**Overall:** the three ordinary profiles behave sensibly and clearly differ from each other. The tricky profiles show the real limits: the system follows energy first, does not understand moods it has not seen, and does not admit when the catalog has nothing good to offer. I compared the profiles most useful for learning something (nine pairings), not all 36 possible pairs.
+**Profile comparisons.** The three ordinary profiles got clearly different, sensible lists. Chill Lofi and Deep Intense Rock shared no songs. The tricky profiles showed the limits. "Loud Unplugged" dropped the acoustic request without saying so. "Lofi Genre, Metal Everything Else" got metal, because energy outweighs genre. "Unknown Genre/Mood" got mid-energy songs with scores that looked good but only meant "close to average." The full profile-by-profile write-up is in [docs/original_readme.md](docs/original_readme.md).
 
 ---
 
-## 8. Ideas for Improvement  
+## 9. What Surprised Me While Testing Reliability
 
-1. **Add a "no good match" warning.** Say so when the top score is low.
-2. **Add mood similarity.** Let "sad" partly match "melancholic" and "wistful." Do the same for close genres.
-3. **Mix up the top 5.** Limit how many songs come from one genre, and add more low-energy and rare-genre songs.
+1. **Temperature 0 did not mean "same answer every time."** I expected the same request to give the same parse. Instead, "mellow rainy study, no pop" gave mood `chill` one day and `focused` the next, which led to different songs. Both answers were valid, but it taught me that repeatability has to be measured, not assumed.
+2. **My tests were secretly calling the real API.** The Streamlit app loads my `.env` file, so the UI tests were sending real requests to Gemini. Nothing failed. The only clue was that the tests took 12 seconds instead of 4, which is how the AI assistant spotted it. Now every test runs with the key blanked out. A passing test suite can still hide a problem.
+3. **The model almost never failed the check on its own.** I built a whole retry-and-fallback loop and then could not see it work, because Gemini kept giving valid answers. I had to add a switch that injects a fake song on purpose (`--corrupt`). A safety net you never see working is hard to trust.
+4. **When told exactly what was wrong, the model fixed it right away.** Every time the checker rejected a fake song and sent back the error, the second answer passed.
+5. **Model availability is a real reliability risk.** The first model I picked (`gemini-2.5-flash`) returned "not available to new users," and a newer one timed out twice. The offline fallback and a configurable model name turned out to be necessary, not just nice to have.
+6. **Gemini sometimes made better choices than the scorer.** For a rainy study request it put "Nocturne in Rain" first, though the scorer ranked other songs higher on some features. That is the point of adding an LLM, but it also means the match % no longer explains the order on its own.
 
 ---
 
-## 9. Personal Reflection  
+## 10. Ideas for Improvement
 
-**Biggest learning moment.**  
+1. **Add an evaluation script** with labeled requests, reporting pass rate, hallucination rate, fallback rate, and consistency across repeated runs.
+2. **Add a confidence score.** Show "low confidence: nothing fits well" when the best retrieval scores are low. This would finally fix 1.0's "never says I don't know" problem.
+3. **Fact-check explanations.** Make sure any number Gemini quotes matches the song's real data.
+4. **Add song notes** (short descriptions) so Gemini has more than numbers to work with.
+5. **Grow and balance the catalog,** especially low-energy songs and single-song genres.
+
+---
+
+## 11. Collaboration with AI
+
+**How I used AI.** I built 2.0 with Claude Code as a coding partner, working in phases:
+
+- **Planning:** it helped me plan, and I made the key decisions: RAG plus a self-check loop as the core features, Gemini as the provider because of its free tier, and the build order.
+- **Building:** it wrote most of the code, tests, and docs one phase at a time.
+- **Checking:** I ran the app and CLI to check results. When I didn't understand something, I asked it to explain. For example, I had it write [docs/build_notes.md](docs/build_notes.md), which explains RAG from scratch and records every decision with its reason. Before letting it add more evaluation features, I asked it to list what already existed and *not* change anything, so I could decide first.
+
+**A suggestion I accepted: build the offline mode first, before adding Gemini.** The AI suggested starting with guardrails, logging, and a rule-based parser that needs no API key, and only then adding Gemini. I accepted because:
+- anyone grading or cloning the project can run it and its tests without a key
+- every Gemini failure has a safe place to land
+
+It paid off when the first model I tried was unavailable and another timed out: the app kept working. I also accepted its suggestion to reuse my 1.0 scorer as the retriever instead of adding embeddings, because 28 structured songs don't need vector search.
+
+**A suggestion I changed: when to build the Streamlit UI.** The AI's original plan said to keep the command line first and add a Streamlit UI "only if there's spare time," as an optional extra at the end. I changed that and asked for the UI in the first few steps. I wanted to test every later feature by clicking through real requests, not just reading terminal output. After that, each new piece (Gemini, the retry loop, the debug switch) showed up in the UI as soon as it was built, which made problems much easier to spot.
+
+**A suggestion I did not take (for now).** After the README was written, the AI suggested adding an evaluation script, a confidence score, and a human-rating table. I decided not to add them yet. The project already had automated tests, built-in validation, logging, and documented manual checks. I chose to finish and document what existed rather than grow the scope. They are listed above as next steps.
+
+**What I learned about working with AI.** The AI drafts fast, but small mistakes still got into its first drafts:
+- a wrong test assertion
+- a per-file test count that didn't match the real number
+- a README summary saying "10/10 passed" when one check was only partial
+
+Each one was caught by running the code or re-checking the numbers before moving on. In 1.0, I caught the AI miscounting genres myself (it said 8 had one song; the real number was 9). The habit I keep: check every number that goes into a report, no matter who wrote it.
+
+---
+
+## 12. Personal Reflection (VibeFinder 1.0)
+
+*Kept from 1.0 for comparison.*
+
+**Biggest learning moment.**
 When I doubled energy and halved genre, the same code gave different "taste." Songs moved in and out of the top 5, and a folk fan started getting rock. I had thought of the score as math. Now I see it as a set of choices about what matters. The tricky profiles taught me more than the normal ones. They showed where the model quietly breaks, like the "sad" mood that no song has.
 
-**How AI helped, and when I double-checked it.** 
-AI helped me write the profiles, run all of them, and give feedback on my plan and design. But I could not trust it blindly. After the weight change, I checked that scores stayed between 0 and 1 and that the tests passed. I also found that the AI had miscounted the genres. It said 8 genres had one song. The real number was 9. I fixed it. That small mistake reminded me to check every number that goes into a report. The AI is good at drafting. I still have to confirm the facts.
-
-**What surprised me.** 
+**What surprised me.**
 A few simple rules felt like real recommendations. Chill Lofi gave calm study songs, and the reasons next to each song made it feel like it understood me. But it does not understand anything. It just adds up points. The Gym Hero result showed this best. It kept appearing for people who wanted happy pop, because it is loud and poppy. That looks like a "taste" pattern, but it is really just one song that scores well on the heaviest feature.
-
-**What I would try next.**
-- Add a warning when no song is a good match.
-- Let similar moods and genres share credit, so "sad" can match "melancholic."
-- Limit how many songs from one genre can show up, and add more low-energy songs.
