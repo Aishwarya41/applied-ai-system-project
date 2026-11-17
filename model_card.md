@@ -155,7 +155,7 @@ I ran nine listener profiles through the recommender and read the top 5 songs fo
 ## 9. What Surprised Me While Testing Reliability
 
 1. **Temperature 0 did not mean "same answer every time."** I expected the same request to give the same parse. Instead, "mellow rainy study, no pop" gave mood `chill` one day and `focused` the next, which led to different songs. Both answers were valid, but it taught me that repeatability has to be measured, not assumed.
-2. **My tests were secretly calling the real API.** The Streamlit app loads my `.env` file, so the UI tests were sending real requests to Gemini. Nothing failed. The only clue was that the tests took 12 seconds instead of 4, which is how the AI assistant spotted it. Now every test runs with the key blanked out. A passing test suite can still hide a problem.
+2. **My tests were secretly calling the real API.** The Streamlit app loads my `.env` file, so the UI tests were sending real requests to Gemini. Nothing failed. The only clue was that the tests took 12 seconds instead of 4. Now every test runs with the key blanked out. A passing test suite can still hide a problem.
 3. **The model almost never failed the check on its own.** I built a whole retry-and-fallback loop and then could not see it work, because Gemini kept giving valid answers. I had to add a switch that injects a fake song on purpose (`--corrupt`). A safety net you never see working is hard to trust.
 4. **When told exactly what was wrong, the model fixed it right away.** Every time the checker rejected a fake song and sent back the error, the second answer passed.
 5. **Model availability is a real reliability risk.** The first model I picked (`gemini-2.5-flash`) returned "not available to new users," and a newer one timed out twice. The offline fallback and a configurable model name turned out to be necessary, not just nice to have.
@@ -168,8 +168,7 @@ I ran nine listener profiles through the recommender and read the top 5 songs fo
 1. **Add an evaluation script** with labeled requests, reporting pass rate, hallucination rate, fallback rate, and consistency across repeated runs.
 2. **Add a confidence score.** Show "low confidence: nothing fits well" when the best retrieval scores are low. This would finally fix 1.0's "never says I don't know" problem.
 3. **Fact-check explanations.** Make sure any number Gemini quotes matches the song's real data.
-4. **Add song notes** (short descriptions) so Gemini has more than numbers to work with.
-5. **Grow and balance the catalog,** especially low-energy songs and single-song genres.
+4. **Grow and balance the catalog,** especially low-energy songs and single-song genres.
 
 ---
 
@@ -178,8 +177,8 @@ I ran nine listener profiles through the recommender and read the top 5 songs fo
 **How I used AI.** I built 2.0 with Claude Code as a coding partner, working in phases:
 
 - **Planning:** it helped me plan, and I made the key decisions: RAG plus a self-check loop as the core features, Gemini as the provider because of its free tier, and the build order.
-- **Building:** it wrote most of the code, tests, and docs one phase at a time.
-- **Checking:** I ran the app and CLI to check results. When I didn't understand something, I asked it to explain. For example, I had it write [docs/build_notes.md](docs/build_notes.md), which explains RAG from scratch and records every decision with its reason. Before letting it add more evaluation features, I asked it to list what already existed and *not* change anything, so I could decide first.
+- **Building:** it wrote most of the code and tests one phase at a time and I verified and tested each change.
+- **Checking:** I ran the app and CLI to check results. When I didn't understand something, I asked it to explain.
 
 **A suggestion I accepted: build the offline mode first, before adding Gemini.** The AI suggested starting with guardrails, logging, and a rule-based parser that needs no API key, and only then adding Gemini. I accepted because:
 - anyone grading or cloning the project can run it and its tests without a key
@@ -189,23 +188,31 @@ It paid off when the first model I tried was unavailable and another timed out: 
 
 **A suggestion I changed: when to build the Streamlit UI.** The AI's original plan said to keep the command line first and add a Streamlit UI "only if there's spare time," as an optional extra at the end. I changed that and asked for the UI in the first few steps. I wanted to test every later feature by clicking through real requests, not just reading terminal output. After that, each new piece (Gemini, the retry loop, the debug switch) showed up in the UI as soon as it was built, which made problems much easier to spot.
 
-**A suggestion I did not take (for now).** After the README was written, the AI suggested adding an evaluation script, a confidence score, and a human-rating table. I decided not to add them yet. The project already had automated tests, built-in validation, logging, and documented manual checks. I chose to finish and document what existed rather than grow the scope. They are listed above as next steps.
+**A suggestion I did not take: a "song notes" knowledge base.** The AI's plan suggested adding a `data/song_notes/` folder with short written descriptions of each song, genre, and mood, so Gemini would have richer context than just numbers. I left it out because the songs are fictional, so those descriptions would have to be invented, most likely by the AI itself. That causes two problems:
+- **It would undo my hallucination protection.** Invented "facts" in the knowledge base would flow straight into Gemini's answers, and my validator checks song IDs and titles, not descriptive text. So the notes could add exactly the kind of unverified detail the whole system is designed to prevent.
+- **Scope.** Embedding search would add a new dependency for only 28 songs.
+
+The trade-off is that explanations stay closer to the numbers ("energy 0.18, melancholic mood") and sound a bit drier. I chose verifiable over vivid.
 
 **What I learned about working with AI.** The AI drafts fast, but small mistakes still got into its first drafts:
 - a wrong test assertion
 - a per-file test count that didn't match the real number
 - a README summary saying "10/10 passed" when one check was only partial
 
-Each one was caught by running the code or re-checking the numbers before moving on. In 1.0, I caught the AI miscounting genres myself (it said 8 had one song; the real number was 9). The habit I keep: check every number that goes into a report, no matter who wrote it.
+Each one was caught by running the code or re-checking the numbers before moving on. In 1.0, I caught the AI miscounting genres (it said 8 had one song; the real number was 9). The habit I keep: check every number that goes into a report, no matter who wrote it.
 
 ---
 
-## 12. Personal Reflection (VibeFinder 1.0)
-
-*Kept from 1.0 for comparison.*
+## 12. Personal Reflection
 
 **Biggest learning moment.**
-When I doubled energy and halved genre, the same code gave different "taste." Songs moved in and out of the top 5, and a folk fan started getting rock. I had thought of the score as math. Now I see it as a set of choices about what matters. The tricky profiles taught me more than the normal ones. They showed where the model quietly breaks, like the "sad" mood that no song has.
+I watched the checker catch a fake song, send the error back to Gemini, and get a correct answer on the second try. That is when RAG made sense to me. The AI does not need to know my data. It needs to be given the right facts, and then something outside the AI has to check that it used them. Every guarantee in VibeFinder 2.0 comes from plain code around the model, not from the model itself: no invented songs, no out-of-range numbers, an answer even when the API is down.
 
-**What surprised me.**
-A few simple rules felt like real recommendations. Chill Lofi gave calm study songs, and the reasons next to each song made it feel like it understood me. But it does not understand anything. It just adds up points. The Gym Hero result showed this best. It kept appearing for people who wanted happy pop, because it is loud and poppy. That looks like a "taste" pattern, but it is really just one song that scores well on the heaviest feature.
+**Fluent is not the same as correct.**
+In 1.0, the system showed five confident-looking songs even when every score was 0.00. In 2.0, the AI writes smooth, friendly explanations, which makes it sound even more sure of itself. Most of the time it is right. But it sometimes adds details that are not in the data, like a "steady tempo." A nicer-sounding answer makes a wrong one harder to spot. That is why I show warnings, a trace of every step, and a clear note when the system falls back. The user should be able to see how sure the system really is, not just how sure it sounds.
+
+**Reliability has to be measured.**
+I assumed temperature 0 would give the same answer every time. It did not. I assumed my tests were offline. They were not. Both problems were invisible until I looked closely. I also learned to test failures on purpose. The model almost never failed on its own, so I had to build a way to break it before I could trust the safety net.
+
+**Working with an AI coding partner.**
+The AI let me build much more than I could have alone in the same time. But speed only helped because I made the key decisions myself and checked each step. When I did not understand something, like how RAG works, I asked it to explain until I could explain it back. A project I cannot explain is not really mine.

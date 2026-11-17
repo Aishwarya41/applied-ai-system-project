@@ -303,4 +303,3 @@ model_card.md           Model card, limitations, responsible-AI reflection
 ## Reflection
 
 The biggest lesson was that the LLM is the least reliable part of a reliable AI system, so the design has to assume it will sometimes be wrong. Every useful guarantee in VibeFinder (no invented songs, no out-of-range numbers, an answer even when the API is down) comes from ordinary code around the model, not from the model itself. RAG reframed the problem for me: instead of asking "how do I make the model know my data?", I asked "how do I give it the right facts and then check that it used them?" That shift, from trusting the output to verifying it, is the problem-solving habit I'll take into future AI work.
-s
