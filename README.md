@@ -188,7 +188,15 @@ I can only help with music recommendations. What kind of vibe are you after?
 
 The rule-based path gives deterministic, template-based answers. They're less natural, but always available and always reproducible.
 
-<!-- Add Streamlit screenshots here, e.g. ![VibeFinder UI](assets/ui_rag.png) -->
+### Streamlit web app
+
+**"Upbeat songs for a road trip":** Gemini parsed the request into energy 0.8, valence 0.8, mood `energetic`, then picked grounded songs from the retrieved candidates (2 Gemini calls, check passed).
+
+![VibeFinder answering "Upbeat songs for a road trip"](assets/ui_road_trip.png)
+
+**"chill study music":** parsed as lofi, mood `chill`, low energy. Each card shows the match score, Gemini's explanation, and the song's real feature values for comparison.
+
+![VibeFinder answering "chill study music"](assets/ui_study.png)
 
 ---
 
