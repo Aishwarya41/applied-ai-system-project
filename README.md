@@ -110,7 +110,7 @@ If Gemini is down, times out, or no key is set, a rule-based parser ([src/offlin
 
 ## Sample Interactions
 
-All outputs below are real runs of the CLI with `-k 3` (Gemini model `gemini-3.5-flash-lite`). Traces are trimmed for space.
+All outputs below are real runs of the CLI with `-k 3` (Gemini model `gemini-3.5-flash-lite`). Traces are trimmed for space. The full, untrimmed output of every run, each with the exact command to reproduce it, is in [assets/sample_runs.md](assets/sample_runs.md).
 
 ### 1. RAG: a natural-language request with an exclusion
 
